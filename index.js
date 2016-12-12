@@ -1,22 +1,39 @@
-const express = require('express');
-const request = require('request');
-const program = require('commander');
-const app = express();
+'use strict';
+var fs = require('fs');
+var express = require('express');
+var program = require('commander');
+var http = require('http');
+var https = require('https');
+var app = express();
+var httpProxy = require('http-proxy');
 
 program
 	.version('0.0.1')
-	.option('-p --port <n>', 'Port which your local server will listen to', parseInt)
-	.option('-f --proxyport <n>', 'Proxy port. Use 443 for https sites, 80 for http', parseInt)
-	.option('-s --site <site>', 'Site, eg: http://www.lenta.ru')
+	.option('-s --site <site>', 'Site without protocol, eg: lenta.ru')
 	.parse(process.argv);
 
-const port = program.port ? program.port : 3000;
-const proxyPort = program.proxyport ? program.proxyport : 80;
-const site = program.site ? program.site : 'http://www.lenta.ru';
+var site = program.site ? program.site : 'lenta.ru';
+var match = site.match(/^https?:\/\//);
 
-app.use('/', (req, res) => {
-	let url = `${site}:${proxyPort}${req.url}`;
-	req.pipe(request({ 'qs': req.query, 'uri': url })).pipe(res);
+if ( match != null ) {
+	console.log('Do not use protocol');
+	process.exit();
+}
+
+var options = {
+	key: fs.readFileSync('./server.key', 'utf8'),
+	cert: fs.readFileSync('./server.crt', 'utf8')
+};
+var proxy = httpProxy.createProxyServer({});
+
+app.use('/', function(req, res) {
+	proxy.web(req, res, { target: req.protocol + '://' + site, hostRewrite: 'localhost', protocolRewrite: 'https', changeOrigin: true, preserveHeaderKeyCase: true});
 });
 
-app.listen(port, () => console.log(`starting server on ${port} port, proxying to ${site}:${proxyPort}`));
+console.log('proxying to ' + site);
+http.createServer(app).listen(80, function(){
+	console.log('starting http server');
+});
+https.createServer(options, app).listen(443, function(){
+	console.log('starting https server');
+});
